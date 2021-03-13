@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/http"
 	_ "net/http/pprof"
+	"encoding/json"
 	"os"
 	"runtime"
 	"time"
@@ -19,11 +20,24 @@ import (
 )
 
 func main() {
-	MixinMain()
+	mixinMain([]string{})
 }
 
 //export MixinMain
-func MixinMain() {
+func MixinMain(_args *C.char) int {
+	var args []string
+	if err := json.Unmarshal([]byte(C.GoString(_args)), &args); err != nil {
+		fmt.Println(err)
+		return -1
+	}
+	return mixinMain(args)
+}
+
+func mixinMain(args []string) int {
+	if len(args) != 0 {
+		os.Args = args;
+	}
+
 	app := cli.NewApp()
 	app.Name = "mixin"
 	app.Usage = "A free, lightning fast and decentralized network for transferring digital assets."
@@ -563,7 +577,9 @@ func MixinMain() {
 	err := app.Run(os.Args)
 	if err != nil {
 		fmt.Println(err)
+		return -1;
 	}
+	return 0;
 }
 
 func cloneCmd(c *cli.Context) error {
