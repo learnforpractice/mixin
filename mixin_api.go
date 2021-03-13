@@ -50,7 +50,6 @@ func renderError(err error) *C.char {
 func CreateAddress(_params *C.char) *C.char {
 	var params CreateAddressParams
 	__params := C.GoString(_params)
-	fmt.Printf("++++++++%s\n", __params)
 	err := json.Unmarshal([]byte(__params), &params)
 	if err != nil {
 		return renderData(err)

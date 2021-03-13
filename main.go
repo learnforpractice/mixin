@@ -7,6 +7,7 @@ import (
 	"os"
 	"runtime"
 	"time"
+	"C"
 
 	"github.com/MixinNetwork/mixin/config"
 	"github.com/MixinNetwork/mixin/kernel"
@@ -18,6 +19,11 @@ import (
 )
 
 func main() {
+	MixinMain()
+}
+
+//export MixinMain
+func MixinMain() {
 	app := cli.NewApp()
 	app.Name = "mixin"
 	app.Usage = "A free, lightning fast and decentralized network for transferring digital assets."
