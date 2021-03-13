@@ -1,3 +1,4 @@
 mixin
 .DS_Store
-
+mixin.h
+mixin.so
