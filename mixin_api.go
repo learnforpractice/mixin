@@ -661,3 +661,13 @@ func BuildTransactionWithGhostKeys(assetId_ *C.char, ghostKeys_ *C.char, trxHash
 	signed := tx.AsLatestVersion()
 	return renderData(hex.EncodeToString(signed.Marshal()))
 }
+
+//export GetPublicKey
+func GetPublicKey(_private *C.char) *C.char {
+	private := C.GoString(_private)
+	key, err := crypto.KeyFromString(private)
+	if err != nil {
+		return renderError(err)
+	}
+	return renderData(key.Public)
+}
