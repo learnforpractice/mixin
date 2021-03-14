@@ -12,6 +12,7 @@ import (
 	"strconv"
 	"strings"
 	_"time"
+	"runtime"
 	"C"
 
 	"github.com/MixinNetwork/mixin/common"
@@ -41,7 +42,9 @@ func renderData(data interface{}) *C.char {
 }
 
 func renderError(err error) *C.char {
-	ret := map[string]interface{}{"error": err.Error()}
+	pc, fn, line, _ := runtime.Caller(1)
+	error := fmt.Sprintf("[error] in %s[%s:%d] %v", runtime.FuncForPC(pc).Name(), fn, line, err)
+	ret := map[string]interface{}{"error": error}
 	result, _ := json.Marshal(ret)
 	return C.CString(string(result))
 }
@@ -588,4 +591,68 @@ func DecodePledgeNode(_params *C.char) *C.char {
 	result["signer"] = fmt.Sprintf("%s", signer)
 	result["payee"] = fmt.Sprintf("%s", payee)
 	return renderData(result)
+}
+
+type GhostKeys struct {
+	Mask crypto.Key   `json:"mask"`
+	Keys []crypto.Key `json:"keys"`
+}
+
+//EOS 6cfe566e-4aad-470b-8c9a-2fd35b49c68d"
+//export BuildTransactionWithGhostKeys
+func BuildTransactionWithGhostKeys(assetId_ *C.char, ghostKeys_ *C.char, trxHash_ *C.char, outputAmount_ *C.char, memo_ *C.char, outputIndex_ int) *C.char {
+	assetId := C.GoString(assetId_)
+	ghostKeys := C.GoString(ghostKeys_)
+	trxHash := C.GoString(trxHash_)
+	outputAmount := C.GoString(outputAmount_)
+	memo := C.GoString(memo_)
+
+	var keys []GhostKeys
+	err := json.Unmarshal([]byte(ghostKeys), &keys)
+	if err != nil {
+		return renderError(err)
+	}
+
+	var amounts []string
+	err = json.Unmarshal([]byte(outputAmount), &amounts)
+	if err != nil {
+		return renderError(err)
+	}
+
+	if len(keys) != len(amounts) {
+		return renderError(err)
+	}
+	
+	// log.Printf("++++BuildTransactionWithGhostKeys:%s %s\n", keys.Mask, keys.Keys)
+	var outputs []*common.Output;
+	for i, key := range keys {
+		output := &common.Output{Mask: key.Mask, Keys: key.Keys, Amount: common.NewIntegerFromString(amounts[i]), Script: []uint8("\xff\xfe\x01")}
+		outputs = append(outputs, output)
+	}
+
+	_assetId, err := crypto.HashFromString(assetId)
+	if err != nil {
+		return renderError(err)
+	}
+
+	_memo, err := hex.DecodeString(memo)
+	if err != nil {
+		return renderError(err)
+	}
+
+	_trxHash, err := crypto.HashFromString(trxHash)
+	if err != nil {
+		return renderError(err)
+	}
+
+	tx := &common.Transaction {
+		Version: common.TxVersion,
+		Inputs:  []*common.Input{&common.Input{Hash: _trxHash, Index: outputIndex_}},
+//		Outputs: []*Output{&Output{Mask: keys.Mask, Keys: keys.Keys, Amount: outputAmount, Script: "fffe01"}},
+		Outputs: outputs,
+		Asset: _assetId,
+		Extra: _memo,
+	}
+	signed := tx.AsLatestVersion()
+	return renderData(hex.EncodeToString(signed.Marshal()))
 }
