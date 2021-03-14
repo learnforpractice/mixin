@@ -194,12 +194,29 @@ func DecodeTransaction(_raw *C.char) *C.char {
 	return renderData(string(data))
 }
 
+//export EncodeTransaction
+func EncodeTransaction(params *C.char, signs *C.char) *C.char {
+	var trx common.SignedTransaction
+
+	err := json.Unmarshal([]byte(C.GoString(params)), &trx)
+	if err != nil {
+		return renderError(err)
+	}
+
+	err = json.Unmarshal([]byte(C.GoString(signs)), &trx.SignaturesMap)
+	if err != nil {
+		return renderError(err)
+	}
+	
+	signed := trx.AsLatestVersion()
+	return renderData(hex.EncodeToString(signed.Marshal()))
+}
+
 //export BuildRawTransaction
 func BuildRawTransaction(_params *C.char) *C.char {
-	__params := C.GoString(_params)
 	var params map[string]string
 	
-	if err := json.Unmarshal([]byte(__params), &params); err != nil {
+	if err := json.Unmarshal([]byte(C.GoString(_params)), &params); err != nil {
 		return renderError(err)
 	}
 
@@ -604,7 +621,6 @@ type GhostKeys struct {
 	Keys []crypto.Key `json:"keys"`
 }
 
-//EOS 6cfe566e-4aad-470b-8c9a-2fd35b49c68d"
 //export BuildTransactionWithGhostKeys
 func BuildTransactionWithGhostKeys(assetId_ *C.char, ghostKeys_ *C.char, trxHash_ *C.char, outputAmount_ *C.char, memo_ *C.char, outputIndex_ int) *C.char {
 	assetId := C.GoString(assetId_)
@@ -669,5 +685,5 @@ func GetPublicKey(_private *C.char) *C.char {
 	if err != nil {
 		return renderError(err)
 	}
-	return renderData(key.Public)
+	return renderData(key.Public())
 }
