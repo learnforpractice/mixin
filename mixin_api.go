@@ -13,6 +13,7 @@ import (
 	"strings"
 	_"time"
 	"runtime"
+	"log"
 	"C"
 
 	"github.com/MixinNetwork/mixin/common"
@@ -47,6 +48,11 @@ func renderError(err error) *C.char {
 	ret := map[string]interface{}{"error": error}
 	result, _ := json.Marshal(ret)
 	return C.CString(string(result))
+}
+
+//export Init
+func Init() {
+	log.SetFlags(log.LstdFlags | log.Lshortfile)
 }
 
 //export CreateAddress
@@ -623,7 +629,6 @@ func BuildTransactionWithGhostKeys(assetId_ *C.char, ghostKeys_ *C.char, trxHash
 		return renderError(err)
 	}
 	
-	// log.Printf("++++BuildTransactionWithGhostKeys:%s %s\n", keys.Mask, keys.Keys)
 	var outputs []*common.Output;
 	for i, key := range keys {
 		output := &common.Output{Mask: key.Mask, Keys: key.Keys, Amount: common.NewIntegerFromString(amounts[i]), Script: []uint8("\xff\xfe\x01")}
