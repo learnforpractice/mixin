@@ -1,3 +1,3 @@
-go build -o mixin.so -buildmode=c-archive
+go build -o libmixin.a -buildmode=c-archive
 
 
