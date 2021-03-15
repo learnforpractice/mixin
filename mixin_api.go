@@ -187,7 +187,7 @@ func DecodeTransaction(_raw *C.char) *C.char {
 		return renderError(err)
 	}
 	m := transactionToMap(ver)
-	data, err := json.MarshalIndent(m, "", "  ")
+	data, err := json.Marshal(m)
 	if err != nil {
 		return renderError(err)
 	}
@@ -210,6 +210,86 @@ func EncodeTransaction(params *C.char, signs *C.char) *C.char {
 	
 	signed := trx.AsLatestVersion()
 	return renderData(hex.EncodeToString(signed.Marshal()))
+}
+
+//export SignRawTransaction
+func SignRawTransaction(_params *C.char) *C.char {
+	var params map[string]string
+	err := json.Unmarshal([]byte(C.GoString(_params)), &params)
+	if err != nil {
+		return renderError(err)
+	}
+
+	_raw, err := hex.DecodeString(params["raw"])
+	if err != nil {
+		return renderError(err)
+	}
+	ver, err := common.UnmarshalVersionedTransaction(_raw)
+	if err != nil {
+		return renderError(err)
+	}
+
+	var raw = signerInput{}
+	err = json.Unmarshal([]byte(params["trx"]), &raw)
+	raw.Node = params["node"]
+
+	var keys []string
+	if err = json.Unmarshal([]byte(params["keys"]), &keys); err != nil {
+		return renderError(err)
+	}
+	
+	var accounts []*common.Address
+	for _, s := range keys {
+		key, err := hex.DecodeString(s)
+		if err != nil {
+			return renderError(err)
+		}
+		if len(key) != 64 {
+			return renderError(fmt.Errorf("invalid key length %d", len(key)))
+		}
+		var account common.Address
+		copy(account.PrivateViewKey[:], key[:32])
+		copy(account.PrivateSpendKey[:], key[32:])
+		accounts = append(accounts, &account)
+	}
+	
+	inputIndex, err := strconv.ParseInt(params["input_index"], 10, 64)
+	if err != nil {
+		return renderError(err)
+	}
+
+	ver.SignaturesMap = nil
+
+	err = ver.SignInput(raw, int(inputIndex), accounts)
+	if err != nil {
+		return renderError(err)
+	}
+	log.Printf("++++++++++ver.SignaturesMap: %s", ver.SignaturesMap)
+	signatures, err := json.Marshal(ver.SignaturesMap)
+	if err != nil {
+		return renderError(err)
+	}
+
+	return renderData(string(signatures))
+}
+
+//export AddSignaturesToRawTransaction
+func AddSignaturesToRawTransaction(_raw *C.char, signs *C.char) *C.char {
+	raw, err := hex.DecodeString(C.GoString(_raw))
+	if err != nil {
+		return renderError(err)
+	}
+	ver, err := common.UnmarshalVersionedTransaction(raw)
+	if err != nil {
+		return renderError(err)
+	}
+
+	err = json.Unmarshal([]byte(C.GoString(signs)), &ver.SignaturesMap)
+
+	if err != nil {
+		return renderError(err)
+	}
+	return renderData(hex.EncodeToString(ver.Marshal()))
 }
 
 //export BuildRawTransaction
@@ -409,13 +489,25 @@ func SignTransaction(_params *C.char) *C.char {
 	}
 
 	signed := tx.AsLatestVersion()
-	for i := range signed.Inputs {
-		err := signed.SignInput(raw, i, accounts)
-		if err != nil {
-			return renderError(err)
-		}
+	inputIndex, err := strconv.ParseInt(params["inputIndex"], 10, 64)
+	if err != nil {
+		return renderError(err)
 	}
-	return renderData(hex.EncodeToString(signed.Marshal()))
+	err = signed.SignInput(raw, int(inputIndex), accounts)
+	if err != nil {
+		return renderError(err)
+	}
+
+	signatures, err := json.Marshal(signed.SignaturesMap)
+	if err != nil {
+		return renderError(err)
+	}
+
+	var ret = map[string]string{}
+	ret["signature"] = string(signatures)
+	ret["raw"] = hex.EncodeToString(signed.Marshal())
+
+	return renderData(ret)
 }
 
 //export PledgeNode
