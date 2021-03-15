@@ -264,7 +264,7 @@ func SignRawTransaction(_params *C.char) *C.char {
 	if err != nil {
 		return renderError(err)
 	}
-	log.Printf("++++++++++ver.SignaturesMap: %s", ver.SignaturesMap)
+	log.Printf("++++++++++ver.SignaturesMap: %v", ver.SignaturesMap)
 	signatures, err := json.Marshal(ver.SignaturesMap)
 	if err != nil {
 		return renderError(err)
