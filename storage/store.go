@@ -19,7 +19,7 @@ type Store interface {
 	TopologySequence() uint64
 
 	ReadUTXO(hash crypto.Hash, index int) (*common.UTXOWithLock, error)
-	LockUTXO(hash crypto.Hash, index int, tx crypto.Hash, fork bool) error
+	LockUTXOs(inputs []*common.Input, tx crypto.Hash, fork bool) error
 	CheckDepositInput(deposit *common.DepositData, tx crypto.Hash) error
 	LockDepositInput(deposit *common.DepositData, tx crypto.Hash, fork bool) error
 	CheckGhost(key crypto.Key) (bool, error)
@@ -34,7 +34,7 @@ type Store interface {
 
 	CachePutTransaction(tx *common.VersionedTransaction) error
 	CacheGetTransaction(hash crypto.Hash) (*common.VersionedTransaction, error)
-	CacheListTransactions(hook func(tx *common.VersionedTransaction) error) error
+	CacheListTransactions(offset crypto.Hash, limit int) ([]*common.VersionedTransaction, error)
 	CacheRemoveTransactions([]crypto.Hash) error
 
 	ReadLastMintDistribution(group string) (*common.MintDistribution, error)

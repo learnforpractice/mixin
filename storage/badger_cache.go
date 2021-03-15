@@ -14,10 +14,7 @@ const (
 	cachePrefixSnapshotNodeMeta  = "SNAPSHOTNODEMETA"
 )
 
-func (s *BadgerStore) CacheListTransactions(hook func(tx *common.VersionedTransaction) error) error {
-	snapTxn := s.snapshotsDB.NewTransaction(false)
-	defer snapTxn.Discard()
-
+func (s *BadgerStore) CacheListTransactions(offset crypto.Hash, limit int) ([]*common.VersionedTransaction, error) {
 	txn := s.cacheDB.NewTransaction(false)
 	defer txn.Discard()
 
@@ -28,30 +25,22 @@ func (s *BadgerStore) CacheListTransactions(hook func(tx *common.VersionedTransa
 	it := txn.NewIterator(opts)
 	defer it.Close()
 
-	for it.Seek(prefix); it.Valid(); it.Next() {
-		key := it.Item().KeyCopy(nil)[len(prefix):]
-		key = append([]byte(graphPrefixFinalization), key...)
-		_, err := snapTxn.Get(key)
-		if err == nil {
-			continue
-		} else if err != badger.ErrKeyNotFound {
-			return err
-		}
-
-		v, err := it.Item().ValueCopy(nil)
+	var txs []*common.VersionedTransaction
+	it.Seek(cacheTransactionCacheKey(offset))
+	for ; len(txs) < limit && it.Valid(); it.Next() {
+		err := it.Item().Value(func(v []byte) error {
+			ver, err := common.DecompressUnmarshalVersionedTransaction(v)
+			if err != nil {
+				return err
+			}
+			txs = append(txs, ver)
+			return nil
+		})
 		if err != nil {
-			return err
-		}
-		ver, err := common.DecompressUnmarshalVersionedTransaction(v)
-		if err != nil {
-			return err
-		}
-		err = hook(ver)
-		if err != nil {
-			return err
+			return nil, err
 		}
 	}
-	return nil
+	return txs, nil
 }
 
 func (s *BadgerStore) CacheRemoveTransactions(hashes []crypto.Hash) error {

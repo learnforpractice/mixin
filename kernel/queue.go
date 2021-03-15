@@ -36,23 +36,25 @@ func (node *Node) QueueTransaction(tx *common.VersionedTransaction) (string, err
 	if err != nil {
 		return "", err
 	}
-	chain := node.GetOrCreateChain(node.IdForNetwork)
 	s := &common.Snapshot{
 		Version:     common.SnapshotVersion,
 		NodeId:      node.IdForNetwork,
 		Transaction: tx.PayloadHash(),
 	}
-	err = chain.AppendSelfEmpty(s)
+	err = node.chain.AppendSelfEmpty(s)
 	return tx.PayloadHash().String(), err
 }
 
 func (node *Node) LoopCacheQueue() error {
 	defer close(node.cqc)
 
-	chain := node.GetOrCreateChain(node.IdForNetwork)
-
+	offset, limit := crypto.Hash{}, 100
 	for {
-		timer := time.NewTimer(time.Duration(config.SnapshotRoundGap))
+		period := time.Duration(config.SnapshotRoundGap)
+		if offset.HasValue() {
+			period = time.Millisecond * 300
+		}
+		timer := time.NewTimer(period)
 		select {
 		case <-node.done:
 			return nil
@@ -66,33 +68,37 @@ func (node *Node) LoopCacheQueue() error {
 
 		neighbors := node.Peer.Neighbors()
 		var stale []crypto.Hash
-		err := node.persistStore.CacheListTransactions(func(tx *common.VersionedTransaction) error {
-			hash := tx.PayloadHash()
-			_, finalized, err := node.persistStore.ReadTransaction(hash)
+		txs, err := node.persistStore.CacheListTransactions(offset, limit)
+		for _, tx := range txs {
+			offset = tx.PayloadHash()
+			_, finalized, err := node.persistStore.ReadTransaction(offset)
 			if err != nil {
-				logger.Printf("LoopCacheQueue ReadTransaction ERROR %s\n", err)
-				return nil
+				logger.Printf("LoopCacheQueue ReadTransaction ERROR %s %s\n", offset, err)
+				continue
 			}
 			if len(finalized) > 0 {
-				stale = append(stale, hash)
-				return nil
+				stale = append(stale, offset)
+				continue
 			}
 			err = tx.Validate(node.persistStore)
 			if err != nil {
-				logger.Verbosef("LoopCacheQueue Validate ERROR %s\n", err)
-				stale = append(stale, hash)
-				return nil
+				logger.Debugf("LoopCacheQueue Validate ERROR %s %s\n", offset, err)
+				// not mark invalid tx as stale is to ensure final graph sync
+				// but we need some way to mitigate cache transaction DoS attach from nodes
+				continue
 			}
-			peer := neighbors[rand.Intn(len(neighbors))]
-			node.SendTransactionToPeer(peer.IdForNetwork, hash)
+			nbor := neighbors[rand.Intn(len(neighbors))]
+			node.SendTransactionToPeer(nbor.IdForNetwork, offset)
 			s := &common.Snapshot{
 				Version:     common.SnapshotVersion,
 				NodeId:      node.IdForNetwork,
 				Transaction: tx.PayloadHash(),
 			}
-			chain.AppendSelfEmpty(s)
-			return nil
-		})
+			node.chain.AppendSelfEmpty(s)
+		}
+		if len(txs) < limit {
+			offset = crypto.Hash{}
+		}
 		if err != nil {
 			logger.Printf("LoopCacheQueue CacheListTransactions ERROR %s\n", err)
 		}
@@ -113,8 +119,8 @@ func (node *Node) QueueState() (uint64, uint64, map[string][2]uint64) {
 	state := make(map[string][2]uint64)
 	for _, chain := range node.chains.m {
 		sa := [2]uint64{
-			chain.CachePool.Len(),
-			chain.finalActionsRing.Len(),
+			uint64(len(chain.CachePool)),
+			uint64(len(chain.finalActionsRing)),
 		}
 		round := chain.FinalPool[chain.FinalIndex]
 		if round != nil {

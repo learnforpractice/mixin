@@ -100,11 +100,5 @@ func (tx *VersionedTransaction) LockInputs(locker UTXOLocker, fork bool) error {
 	case TransactionTypeDeposit:
 		return locker.LockDepositInput(tx.Inputs[0].Deposit, tx.PayloadHash(), fork)
 	}
-	for _, in := range tx.Inputs {
-		err := locker.LockUTXO(in.Hash, in.Index, tx.PayloadHash(), fork)
-		if err != nil {
-			return err
-		}
-	}
-	return nil
+	return locker.LockUTXOs(tx.Inputs, tx.PayloadHash(), fork)
 }

@@ -24,15 +24,19 @@ type Node struct {
 	Signer       common.Address
 	Listener     string
 
-	Peer        *network.Peer
-	TopoCounter *TopologicalSequence
-	SyncPoints  *syncMap
+	Peer          *network.Peer
+	TopoCounter   *TopologicalSequence
+	SyncPoints    *syncMap
+	SyncPointsMap map[crypto.Hash]*network.SyncPoint
 
 	GraphTimestamp uint64
 	Epoch          uint64
 
-	chains                  *chainsMap
-	allNodesSortedWithState []*CNode
+	chains                     *chainsMap
+	allNodesSortedWithState    []*CNode
+	nodeStateSequences         []*NodeStateSequence
+	acceptedNodeStateSequences []*NodeStateSequence
+	chain                      *Chain
 
 	genesisNodesMap map[crypto.Hash]bool
 	genesisNodes    []crypto.Hash
@@ -48,6 +52,11 @@ type Node struct {
 	elc  chan struct{}
 	mlc  chan struct{}
 	cqc  chan struct{}
+}
+
+type NodeStateSequence struct {
+	Timestamp         uint64
+	NodesWithoutState []*CNode
 }
 
 type CNode struct {
@@ -123,7 +132,34 @@ func (node *Node) LoadNodeConfig() {
 	node.Listener = node.custom.Network.Listener
 }
 
+func (node *Node) buildNodeStateSequences(allNodesSortedWithState []*CNode, acceptedOnly bool) []*NodeStateSequence {
+	nodeStateSequences := make([]*NodeStateSequence, len(allNodesSortedWithState))
+	for i, n := range allNodesSortedWithState {
+		nodes := node.nodeSequeueWithoutState(n.Timestamp+1, acceptedOnly)
+		seq := &NodeStateSequence{
+			Timestamp:         n.Timestamp,
+			NodesWithoutState: nodes,
+		}
+		nodeStateSequences[i] = seq
+	}
+	return nodeStateSequences
+}
+
 func (node *Node) NodesListWithoutState(threshold uint64, acceptedOnly bool) []*CNode {
+	sequences := node.nodeStateSequences
+	if acceptedOnly {
+		sequences = node.acceptedNodeStateSequences
+	}
+	for i := len(sequences); i > 0; i-- {
+		seq := sequences[i-1]
+		if seq.Timestamp < threshold {
+			return seq.NodesWithoutState
+		}
+	}
+	return nil
+}
+
+func (node *Node) nodeSequeueWithoutState(threshold uint64, acceptedOnly bool) []*CNode {
 	filter := make(map[crypto.Hash]*CNode)
 	for _, n := range node.allNodesSortedWithState {
 		if n.Timestamp >= threshold {
@@ -263,6 +299,9 @@ func (node *Node) LoadConsensusNodes() error {
 		logger.Printf("LoadConsensusNode %v\n", cnodes[i])
 	}
 	node.allNodesSortedWithState = cnodes
+	node.nodeStateSequences = node.buildNodeStateSequences(cnodes, false)
+	node.acceptedNodeStateSequences = node.buildNodeStateSequences(cnodes, true)
+	node.chain = node.GetOrCreateChain(node.IdForNetwork)
 	return nil
 }
 
@@ -418,19 +457,20 @@ func (node *Node) UpdateSyncPoint(peerId crypto.Hash, points []*network.SyncPoin
 			node.SyncPoints.Set(peerId, p)
 		}
 	}
+	node.SyncPointsMap = node.SyncPoints.Map()
 }
 
 func (node *Node) CheckBroadcastedToPeers() bool {
-	chain := node.GetOrCreateChain(node.IdForNetwork)
-	if chain.State == nil {
+	spm := node.SyncPointsMap
+	if len(spm) == 0 || node.chain.State == nil {
 		return false
 	}
 
-	final, count := chain.State.FinalRound.Number, 1
+	final, count := node.chain.State.FinalRound.Number, 1
 	threshold := node.ConsensusThreshold(uint64(clock.Now().UnixNano()))
 	nodes := node.NodesListWithoutState(uint64(clock.Now().UnixNano()), true)
 	for _, cn := range nodes {
-		remote := node.SyncPoints.Get(cn.IdForNetwork)
+		remote := spm[cn.IdForNetwork]
 		if remote == nil {
 			continue
 		}
@@ -442,18 +482,18 @@ func (node *Node) CheckBroadcastedToPeers() bool {
 }
 
 func (node *Node) CheckCatchUpWithPeers() bool {
-	chain := node.GetOrCreateChain(node.IdForNetwork)
-	if chain.State == nil {
+	spm := node.SyncPointsMap
+	if len(spm) == 0 || node.chain.State == nil {
 		return false
 	}
 
 	threshold := node.ConsensusThreshold(uint64(clock.Now().UnixNano()))
-	cache, updated := chain.State.CacheRound, 1
-	final := chain.State.FinalRound.Number
+	cache, updated := node.chain.State.CacheRound, 1
+	final := node.chain.State.FinalRound.Number
 
 	nodes := node.NodesListWithoutState(uint64(clock.Now().UnixNano()), true)
 	for _, cn := range nodes {
-		remote := node.SyncPoints.Get(cn.IdForNetwork)
+		remote := spm[cn.IdForNetwork]
 		if remote == nil {
 			continue
 		}
@@ -501,8 +541,13 @@ func (s *syncMap) Set(k crypto.Hash, p *network.SyncPoint) {
 	s.m[k] = p
 }
 
-func (s *syncMap) Get(k crypto.Hash) *network.SyncPoint {
+func (s *syncMap) Map() map[crypto.Hash]*network.SyncPoint {
 	s.mutex.RLock()
 	defer s.mutex.RUnlock()
-	return s.m[k]
+
+	m := make(map[crypto.Hash]*network.SyncPoint)
+	for k, p := range s.m {
+		m[k] = p
+	}
+	return m
 }
