@@ -92,9 +92,9 @@ func CreateAddress(_params *C.char) *C.char {
 	}
 	var result CreateAddressResult
 
-	fmt.Printf("address:\t%s\n", addr.String())
-	fmt.Printf("view key:\t%s\n", addr.PrivateViewKey.String())
-	fmt.Printf("spend key:\t%s\n", addr.PrivateSpendKey.String())
+	// fmt.Printf("address:\t%s\n", addr.String())
+	// fmt.Printf("view key:\t%s\n", addr.PrivateViewKey.String())
+	// fmt.Printf("spend key:\t%s\n", addr.PrivateSpendKey.String())
 
 	result.ViewKey = addr.PrivateViewKey.String()
 	result.SpendKey = addr.PrivateSpendKey.String()
