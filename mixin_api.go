@@ -455,6 +455,12 @@ func SignTransaction(_params *C.char) *C.char {
 				Script: out.Script,
 				Mask:   out.Mask,
 			})
+		}  else if out.Withdrawal != nil {
+			tx.Outputs = append(tx.Outputs, &common.Output{
+				Amount:     out.Amount,
+				Withdrawal: out.Withdrawal,
+				Type:       out.Type,
+			})
 		} else {
 			hash := crypto.NewHash(seed)
 			seed = append(hash[:], hash[:]...)

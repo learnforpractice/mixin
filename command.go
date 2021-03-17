@@ -349,6 +349,12 @@ func signTransactionCmd(c *cli.Context) error {
 				Script: out.Script,
 				Mask:   out.Mask,
 			})
+		} else if out.Withdrawal != nil {
+			tx.Outputs = append(tx.Outputs, &common.Output{
+				Amount:     out.Amount,
+				Withdrawal: out.Withdrawal,
+				Type:       out.Type,
+			})
 		} else {
 			hash := crypto.NewHash(seed)
 			seed = append(hash[:], hash[:]...)
@@ -875,6 +881,7 @@ type signerInput struct {
 		Amount   common.Integer    `json:"amount"`
 		Script   common.Script     `json:"script"`
 		Accounts []*common.Address `json:"accounts"`
+		Withdrawal *common.WithdrawalData `json:"withdrawal,omitempty"`
 	}
 	Asset crypto.Hash `json:"asset"`
 	Extra string      `json:"extra"`
