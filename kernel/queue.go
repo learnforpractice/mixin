@@ -3,6 +3,7 @@ package kernel
 import (
 	"math/rand"
 	"time"
+	"log"
 
 	"github.com/MixinNetwork/mixin/common"
 	"github.com/MixinNetwork/mixin/config"
@@ -67,6 +68,10 @@ func (node *Node) LoopCacheQueue() error {
 		}
 
 		neighbors := node.Peer.Neighbors()
+		if len(neighbors) <= 0 {
+			log.Println("+++no neighbors, sleep a while...")
+			continue
+		}
 		var stale []crypto.Hash
 		txs, err := node.persistStore.CacheListTransactions(offset, limit)
 		for _, tx := range txs {
