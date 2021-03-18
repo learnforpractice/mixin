@@ -17,16 +17,22 @@ type CosiSignature struct {
 }
 
 func CosiCommit(randReader io.Reader) *Key {
-	var messageDigest [64]byte
-	n, err := randReader.Read(messageDigest[:])
-	if err != nil {
-		panic(err)
+
+	for i:=0;i<2;i++ {
+		var messageDigest [64]byte
+		n, err := randReader.Read(messageDigest[:])
+		if err != nil {
+			panic(err)
+		}
+		if n != len(messageDigest) {
+			continue
+			// panic(fmt.Errorf("rand read %d %d", len(messageDigest), n))
+		}
+		r := NewKeyFromSeed(messageDigest[:])
+		return &r
 	}
-	if n != len(messageDigest) {
-		panic(fmt.Errorf("rand read %d %d", len(messageDigest), n))
-	}
-	r := NewKeyFromSeed(messageDigest[:])
-	return &r
+	panic("rand read")
+	return nil
 }
 
 func CosiAggregateCommitment(randoms map[int]*Key) (*CosiSignature, error) {
