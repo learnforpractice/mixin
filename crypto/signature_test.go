@@ -3,6 +3,7 @@ package crypto
 import (
 	"crypto/ed25519"
 	"testing"
+	"fmt"
 
 	"github.com/stretchr/testify/assert"
 )
@@ -16,6 +17,18 @@ func TestSignature(t *testing.T) {
 }
 
 func testSignature(assert *assert.Assertions) {
+	{
+		key, _ := KeyFromString("a9d9e97b983bc1fbff5f4c89b8789918d45c9318b1edf460b4fa1a5c4177670b")
+		pub := key.Public()
+		msg := []byte("hello,world")
+		sig := key.Sign(msg)
+		fmt.Printf("+++%s\n", sig.String())
+		assert.True(pub.Verify(msg, sig))
+
+		stdPub := ed25519.PublicKey(pub[:])
+		assert.True(ed25519.Verify(stdPub, msg[:], sig[:]))
+	}
+
 	seed := make([]byte, 64)
 	for i := 0; i < len(seed); i++ {
 		seed[i] = byte(i + 1)

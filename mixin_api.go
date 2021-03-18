@@ -16,6 +16,8 @@ import (
 	"log"
 	"C"
 
+	"crypto/ed25519"
+
 	"github.com/MixinNetwork/mixin/common"
 	_"github.com/MixinNetwork/mixin/config"
 	"github.com/MixinNetwork/mixin/crypto"
@@ -784,4 +786,35 @@ func GetPublicKey(_private *C.char) *C.char {
 		return renderError(err)
 	}
 	return renderData(key.Public())
+}
+
+//export SignMessage
+func SignMessage(_key *C.char, _msg *C.char) *C.char {
+	key, err := crypto.KeyFromString(C.GoString(_key))
+	if err != nil {
+		return renderError(err)
+	}
+	
+	sign := key.Sign([]byte(C.GoString(_msg)))
+	return renderData(sign.String())
+}
+
+//export VerifySignature
+func VerifySignature(_msg *C.char, _pub *C.char, _sig *C.char) *C.char {
+	msg := C.GoString(_msg)
+
+	pub, err := hex.DecodeString(C.GoString(_pub))
+	if err != nil {
+		return renderError(err)
+	}
+
+	sig, err := hex.DecodeString(C.GoString(_sig))
+	if err != nil {
+		return renderError(err)
+	}
+
+	stdPub := ed25519.PublicKey(pub)
+
+	ret := ed25519.Verify(stdPub, []byte(msg), sig)
+	return renderData(ret)
 }
