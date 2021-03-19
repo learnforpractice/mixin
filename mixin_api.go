@@ -14,6 +14,7 @@ import (
 	_"time"
 	"runtime"
 	"log"
+	_"context"
 	"C"
 
 	"crypto/ed25519"
@@ -818,3 +819,28 @@ func VerifySignature(_msg *C.char, _pub *C.char, _sig *C.char) *C.char {
 	ret := ed25519.Verify(stdPub, []byte(msg), sig)
 	return renderData(ret)
 }
+
+//export GetAssetId
+func GetAssetId(_asset *C.char) *C.char {
+	var asset common.Asset
+	err := json.Unmarshal([]byte(C.GoString(_asset)), &asset)
+	if err != nil {
+		return renderError(err)
+	}
+	return renderData(asset.AssetId())
+}
+
+//export GetFeeAssetId
+func GetFeeAssetId(_asset *C.char) *C.char {
+	var asset common.Asset
+	err := json.Unmarshal([]byte(C.GoString(_asset)), &asset)
+	if err != nil {
+		return renderError(err)
+	}
+	return renderData(asset.FeeAssetId())
+}
+
+// func NewMixinApi() {
+// 	ctx := context.WithValue(context.Background(), "key", "Go")
+// }
+

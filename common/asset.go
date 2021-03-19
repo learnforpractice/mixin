@@ -22,8 +22,8 @@ var (
 )
 
 type Asset struct {
-	ChainId  crypto.Hash
-	AssetKey string
+	ChainId  crypto.Hash `json:"chain_id"`
+	AssetKey string `json:"asset_key"`
 }
 
 func init() {
