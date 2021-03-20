@@ -1,5 +1,11 @@
 package main
 
+// static char* get_p(char **pp, int i)
+// {
+//	    return pp[i];
+// }
+import "C"
+
 import (
 	_"bytes"
 	"crypto/rand"
@@ -15,7 +21,7 @@ import (
 	"runtime"
 	"log"
 	_"context"
-	"C"
+	"unsafe"
 
 	"crypto/ed25519"
 
@@ -839,6 +845,33 @@ func GetFeeAssetId(_asset *C.char) *C.char {
 	}
 	return renderData(asset.FeeAssetId())
 }
+
+//export BatchVerify
+func BatchVerify(msg *C.char, msg_size C.int, keys **C.char, keys_size C.int, sigs **C.char, sigs_size C.int) bool {
+	_msg := C.GoBytes(unsafe.Pointer(msg), msg_size)
+	var _keys = make([]*crypto.Key, keys_size)
+	var _sigs = make([]*crypto.Signature, sigs_size)
+
+	if keys_size != sigs_size {
+		return false
+	}
+	for i:=0;i<int(keys_size);i+=1 {
+		key := &crypto.Key{}
+		ptr := unsafe.Pointer(C.get_p(keys, C.int(i)))
+		copy(key[:], C.GoBytes(ptr, 32))
+		_keys[i] = key
+	}
+	for i:=0;i<int(sigs_size);i+=1 {
+		sig := &crypto.Signature{}
+		ptr := unsafe.Pointer(C.get_p(sigs, C.int(i)))
+		copy(sig[:], C.GoBytes(ptr, 64))
+		_sigs[i] = sig
+	}
+	return crypto.BatchVerify(_msg, _keys, _sigs)
+}
+
+//func BatchVerify(msg []byte, keys []*Key, sigs []*Signature) bool
+
 
 // func NewMixinApi() {
 // 	ctx := context.WithValue(context.Background(), "key", "Go")
