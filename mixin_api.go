@@ -26,7 +26,7 @@ import (
 	"crypto/ed25519"
 
 	"github.com/MixinNetwork/mixin/common"
-	_"github.com/MixinNetwork/mixin/config"
+	"github.com/MixinNetwork/mixin/config"
 	"github.com/MixinNetwork/mixin/crypto"
 	_"github.com/MixinNetwork/mixin/kernel"
 	_"github.com/MixinNetwork/mixin/storage"
@@ -899,6 +899,11 @@ func NewGhostKeys(_seed *C.char, accounts *C.char, outputs C.int) *C.char {
 		return renderError(err)
 	}
 	return renderData(string(ret))
+}
+
+//export GetMixinVersion
+func GetMixinVersion() *C.char {
+	return C.CString(config.BuildVersion)
 }
 
 //func BatchVerify(msg []byte, keys []*Key, sigs []*Signature) bool
