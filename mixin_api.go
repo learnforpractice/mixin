@@ -221,34 +221,82 @@ func EncodeTransaction(params *C.char, signs *C.char) *C.char {
 	return renderData(hex.EncodeToString(signed.Marshal()))
 }
 
-//export SignRawTransaction
-func SignRawTransaction(_params *C.char) *C.char {
-	var params map[string]string
-	err := json.Unmarshal([]byte(C.GoString(_params)), &params)
-	if err != nil {
+
+type SignTransactionParams struct {
+	Seed string `json:"seed"`
+	Keys []string   `json:"keys"`
+	Raw signerInput `json:"raw"`
+	InputIndex int `json:"input_index"`
+	Node string `json:"node"`
+}
+
+//export SignTransaction
+func SignTransaction(_params *C.char) *C.char {
+	var params SignTransactionParams
+
+	if err := json.Unmarshal([]byte(C.GoString(_params)), &params); err != nil {
 		return renderError(err)
 	}
 
-	_raw, err := hex.DecodeString(params["raw"])
+	params.Raw.Node = params.Node
+
+	seed, err := hex.DecodeString(params.Seed)
 	if err != nil {
 		return renderError(err)
 	}
-	ver, err := common.UnmarshalVersionedTransaction(_raw)
+	if len(seed) != 64 {
+		seed = make([]byte, 64)
+		_, err := rand.Read(seed)
+		if err != nil {
+			return renderError(err)
+		}
+	}
+
+	tx := common.NewTransaction(params.Raw.Asset)
+	for _, in := range params.Raw.Inputs {
+		if d := in.Deposit; d != nil {
+			tx.AddDepositInput(&common.DepositData{
+				Chain:           d.Chain,
+				AssetKey:        d.AssetKey,
+				TransactionHash: d.TransactionHash,
+				OutputIndex:     d.OutputIndex,
+				Amount:          d.Amount,
+			})
+		} else {
+			tx.AddInput(in.Hash, in.Index)
+		}
+	}
+
+	for _, out := range params.Raw.Outputs {
+		if out.Mask.HasValue() {
+			tx.Outputs = append(tx.Outputs, &common.Output{
+				Type:   out.Type,
+				Amount: out.Amount,
+				Keys:   out.Keys,
+				Script: out.Script,
+				Mask:   out.Mask,
+			})
+		}  else if out.Withdrawal != nil {
+			tx.Outputs = append(tx.Outputs, &common.Output{
+				Amount:     out.Amount,
+				Withdrawal: out.Withdrawal,
+				Type:       out.Type,
+			})
+		} else {
+			hash := crypto.NewHash(seed)
+			seed = append(hash[:], hash[:]...)
+			tx.AddOutputWithType(out.Type, out.Accounts, out.Script, out.Amount, seed)
+		}
+	}
+
+	extra, err := hex.DecodeString(params.Raw.Extra)
 	if err != nil {
 		return renderError(err)
 	}
+	tx.Extra = extra
 
-	var raw = signerInput{}
-	err = json.Unmarshal([]byte(params["trx"]), &raw)
-	raw.Node = params["node"]
-
-	var keys []string
-	if err = json.Unmarshal([]byte(params["keys"]), &keys); err != nil {
-		return renderError(err)
-	}
-	
 	var accounts []*common.Address
-	for _, s := range keys {
+	for _, s := range params.Keys {
 		key, err := hex.DecodeString(s)
 		if err != nil {
 			return renderError(err)
@@ -261,15 +309,76 @@ func SignRawTransaction(_params *C.char) *C.char {
 		copy(account.PrivateSpendKey[:], key[32:])
 		accounts = append(accounts, &account)
 	}
-	
-	inputIndex, err := strconv.ParseInt(params["input_index"], 10, 64)
+
+	signed := tx.AsLatestVersion()
+	inputIndex := params.InputIndex
+	if err != nil {
+		return renderError(err)
+	}
+	err = signed.SignInput(params.Raw, int(inputIndex), accounts)
 	if err != nil {
 		return renderError(err)
 	}
 
+	signatures, err := json.Marshal(signed.SignaturesMap)
+	if err != nil {
+		return renderError(err)
+	}
+
+	var ret = map[string]string{}
+	ret["signatures"] = string(signatures)
+	ret["raw"] = hex.EncodeToString(signed.Marshal())
+
+	return renderData(ret)
+}
+
+type SignRawTransactionParams struct {
+	Seed string `json:"seed"`
+	Keys []string   `json:"keys"`
+	Raw string `json:"raw"`
+	Trx signerInput `json:"trx"`
+	InputIndex int `json:"input_index"`
+	Node string `json:"node"`
+}
+
+//export SignRawTransaction
+func SignRawTransaction(_params *C.char) *C.char {
+	var params SignRawTransactionParams
+	err := json.Unmarshal([]byte(C.GoString(_params)), &params)
+	if err != nil {
+		return renderError(err)
+	}
+
+	_raw, err := hex.DecodeString(params.Raw)
+	if err != nil {
+		return renderError(err)
+	}
+
+	ver, err := common.UnmarshalVersionedTransaction(_raw)
+	if err != nil {
+		return renderError(err)
+	}
+
+	params.Trx.Node = params.Node
+
+	var accounts []*common.Address
+	for _, s := range params.Keys {
+		key, err := hex.DecodeString(s)
+		if err != nil {
+			return renderError(err)
+		}
+		if len(key) != 64 {
+			return renderError(fmt.Errorf("invalid key length %d", len(key)))
+		}
+		var account common.Address
+		copy(account.PrivateViewKey[:], key[:32])
+		copy(account.PrivateSpendKey[:], key[32:])
+		accounts = append(accounts, &account)
+	}
+
 	ver.SignaturesMap = nil
 
-	err = ver.SignInput(raw, int(inputIndex), accounts)
+	err = ver.SignInput(params.Trx, int(params.InputIndex), accounts)
 	if err != nil {
 		return renderError(err)
 	}
@@ -411,118 +520,6 @@ func BuildRawTransaction(_params *C.char) *C.char {
 		}
 	}
 	return renderData(hex.EncodeToString(signed.Marshal()))
-}
-
-//export SignTransaction
-func SignTransaction(_params *C.char) *C.char {
-	var raw signerInput
-	var params map[string]string
-
-	if err := json.Unmarshal([]byte(C.GoString(_params)), &params); err != nil {
-		return renderError(err)
-	}
-
-	err := json.Unmarshal([]byte(params["raw"]), &raw)
-	if err != nil {
-		return renderError(err)
-	}
-	raw.Node = params["node"]
-
-	seed, err := hex.DecodeString(params["seed"])
-	if err != nil {
-		return renderError(err)
-	}
-	if len(seed) != 64 {
-		seed = make([]byte, 64)
-		_, err := rand.Read(seed)
-		if err != nil {
-			return renderError(err)
-		}
-	}
-
-	tx := common.NewTransaction(raw.Asset)
-	for _, in := range raw.Inputs {
-		if d := in.Deposit; d != nil {
-			tx.AddDepositInput(&common.DepositData{
-				Chain:           d.Chain,
-				AssetKey:        d.AssetKey,
-				TransactionHash: d.TransactionHash,
-				OutputIndex:     d.OutputIndex,
-				Amount:          d.Amount,
-			})
-		} else {
-			tx.AddInput(in.Hash, in.Index)
-		}
-	}
-
-	for _, out := range raw.Outputs {
-		if out.Mask.HasValue() {
-			tx.Outputs = append(tx.Outputs, &common.Output{
-				Type:   out.Type,
-				Amount: out.Amount,
-				Keys:   out.Keys,
-				Script: out.Script,
-				Mask:   out.Mask,
-			})
-		}  else if out.Withdrawal != nil {
-			tx.Outputs = append(tx.Outputs, &common.Output{
-				Amount:     out.Amount,
-				Withdrawal: out.Withdrawal,
-				Type:       out.Type,
-			})
-		} else {
-			hash := crypto.NewHash(seed)
-			seed = append(hash[:], hash[:]...)
-			tx.AddOutputWithType(out.Type, out.Accounts, out.Script, out.Amount, seed)
-		}
-	}
-
-	extra, err := hex.DecodeString(raw.Extra)
-	if err != nil {
-		return renderError(err)
-	}
-	tx.Extra = extra
-
-	var keys []string
-	if err = json.Unmarshal([]byte(params["key"]), &keys); err != nil {
-		return renderError(err)
-	}
-
-	var accounts []*common.Address
-	for _, s := range keys {
-		key, err := hex.DecodeString(s)
-		if err != nil {
-			return renderError(err)
-		}
-		if len(key) != 64 {
-			return renderError(fmt.Errorf("invalid key length %d", len(key)))
-		}
-		var account common.Address
-		copy(account.PrivateViewKey[:], key[:32])
-		copy(account.PrivateSpendKey[:], key[32:])
-		accounts = append(accounts, &account)
-	}
-
-	signed := tx.AsLatestVersion()
-	inputIndex, err := strconv.ParseInt(params["inputIndex"], 10, 64)
-	if err != nil {
-		return renderError(err)
-	}
-	err = signed.SignInput(raw, int(inputIndex), accounts)
-	if err != nil {
-		return renderError(err)
-	}
-
-	signatures, err := json.Marshal(signed.SignaturesMap)
-	if err != nil {
-		return renderError(err)
-	}
-
-	var ret = map[string]string{}
-	ret["signature"] = string(signatures)
-	ret["raw"] = hex.EncodeToString(signed.Marshal())
-
-	return renderData(ret)
 }
 
 //export PledgeNode
@@ -868,6 +865,40 @@ func BatchVerify(msg *C.char, msg_size C.int, keys **C.char, keys_size C.int, si
 		_sigs[i] = sig
 	}
 	return crypto.BatchVerify(_msg, _keys, _sigs)
+}
+
+//export NewGhostKeys
+func NewGhostKeys(_seed *C.char, accounts *C.char, outputs C.int) *C.char {
+	var _accounts []common.Address
+	err := json.Unmarshal([]byte(C.GoString(accounts)), &_accounts)
+	if err != nil {
+		return renderError(err)
+	}
+
+	seed, err := hex.DecodeString(C.GoString(_seed))
+	if err != nil {
+		return renderError(err)
+	}
+	if len(seed) != 64 {
+		seed = make([]byte, 64)
+		_, err := rand.Read(seed)
+		if err != nil {
+			return renderError(err)
+		}
+	}
+
+	r := crypto.NewKeyFromSeed(seed)
+	var out GhostKeys
+	out.Mask = r.Public()
+	for _, a := range _accounts {
+		k := crypto.DeriveGhostPublicKey(&r, &a.PublicViewKey, &a.PublicSpendKey, uint64(int(outputs)))
+		out.Keys = append(out.Keys, *k)
+	}
+	ret, err := json.Marshal(out)
+	if err != nil {
+		return renderError(err)
+	}
+	return renderData(string(ret))
 }
 
 //func BatchVerify(msg []byte, keys []*Key, sigs []*Signature) bool
