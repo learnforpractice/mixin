@@ -226,7 +226,7 @@ type SignTransactionParams struct {
 	Seed string `json:"seed"`
 	Keys []string   `json:"keys"`
 	Raw signerInput `json:"raw"`
-	InputIndex int `json:"input_index"`
+	InputIndexes []int `json:"input_indexes"`
 	Node string `json:"node"`
 }
 
@@ -309,17 +309,14 @@ func SignTransaction(_params *C.char) *C.char {
 		copy(account.PrivateSpendKey[:], key[32:])
 		accounts = append(accounts, &account)
 	}
-
+	
 	signed := tx.AsLatestVersion()
-	inputIndex := params.InputIndex
-	if err != nil {
-		return renderError(err)
+	for _, inputIndex := range params.InputIndexes {
+		err = signed.SignInput(params.Raw, int(inputIndex), accounts)
+		if err != nil {
+			return renderError(err)
+		}
 	}
-	err = signed.SignInput(params.Raw, int(inputIndex), accounts)
-	if err != nil {
-		return renderError(err)
-	}
-
 	signatures, err := json.Marshal(signed.SignaturesMap)
 	if err != nil {
 		return renderError(err)
@@ -904,6 +901,16 @@ func NewGhostKeys(_seed *C.char, accounts *C.char, outputs C.int) *C.char {
 //export GetMixinVersion
 func GetMixinVersion() *C.char {
 	return C.CString(config.BuildVersion)
+}
+
+//export GenerateRandomSeed
+func GenerateRandomSeed() *C.char {
+	seed := make([]byte, 64)
+	_, err := rand.Read(seed)
+	if err != nil {
+		return renderError(err)
+	}
+	return C.CString(hex.EncodeToString(seed))
 }
 
 //func BatchVerify(msg []byte, keys []*Key, sigs []*Signature) bool
